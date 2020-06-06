@@ -1,121 +1,88 @@
 import cupy as cp
 
-
 # Configurable default values
 # Don't change after start!
 DISPLAY_DIGITS = 5
-SEGMENT_LENGTH = 8
+SEGMENT_LENGTH = 16
 SEGMENT_BASE = 10**SEGMENT_LENGTH
 
 # Constants
 MAX_TENSOR_VALUE = 2**63-1
 
 
+
 def bigint(x):
-    if type(x) is not int:
-        raise TypeError('x must be int')
-        
-    z = str(x)
-    
-    if x < 0:
-        return bigint(0) - bigint(abs(x))
-        
-    z = z.zfill(len(z) + (-len(z) % SEGMENT_LENGTH))
+    s = str(abs(x))
+    s = s.zfill(len(s) + (-len(s) % SEGMENT_LENGTH))
+
+    sign = -1 if x < 0 else 1
     
     tensor = cp.array([
-        int(z[i:i+SEGMENT_LENGTH])
-            for i in range(0, len(z), SEGMENT_LENGTH)])
+        int(s[i:i + SEGMENT_LENGTH]) * sign
+            for i in range(0, len(s), SEGMENT_LENGTH)], dtype=cp.int64)
     
-    return BigInt(tensor)
-    
-def match_size(a, b):
-    diff = abs(a.size - b.size)
-    ext = cp.zeros(diff, dtype=cp.int64)
-    
-    if a.size < b.size:
-        a = cp.concatenate((ext, a))
-    elif a.size > b.size:
-        b = cp.concatenate((ext, b))
-        
-    return a, b
+    return BigInt(tensor, sign)
 
 class BigInt:
-    def __init__(self, tensor, sign=0):
-        if tensor[0] < 0:
-            self.sign = -1
-            self.tensor = tensor[1:]
-                
-        else:
-            self.sign = 1
-            self.tensor = tensor
-            
-        if sign != 0:
-            self.sign = sign
-            
-        self.carry()
+    def __init__(self, tensor, sign):
+        self.tensor = tensor
+        self.sign = sign
         
     def __repr__(self):
-        z = ''.join([str(x) for x in self.tensor])
+        string = ''.join(map(str, self.tensor))
         
-        if len(z) > DISPLAY_DIGITS*2:
-            return f'{z[:DISPLAY_DIGITS]}..{z[-DISPLAY_DIGITS:]}'
+        if len(string) > DISPLAY_DIGITS * 2:
+            return f'{string[:DISPLAY_DIGITS]} ... {string[-DISPLAY_DIGITS:]}'
         else:
-            return z
+            return string
             
-    def __int__(self):
-        value = int(''.join([str(x) for x in self.tensor]))
+    def __add__(a, b):
+        a, b = a | b
         
-        if self.sign == -1:
-            return 10**len(self.tensor) - value
+        tensor = a.tensor * a.sign + b.tensor * b.sign
+        sign = a.sign if a > b else b.sign
+        
+        bi = BigInt(tensor * sign, sign)
+        bi.carry()
+        
+        return bi
+        
+    def __gt__(a, b):
+        # Requires implementation Tame Carry
+        for x, y in zip(a.tensor, b.tensor):
+            x_abs, y_abs = abs(x), abs(y)
+            
+            if x_abs > y_abs:
+                return True
+            elif x_abs < y_abs:
+                return False
         else:
-            return value
+            return False
+        
+    def __or__(a, b):
+        if a.tensor.size == b.tensor.size:
+            return a, b
+        
+        diff = abs(a.tensor.size - b.tensor.size)
+        
+        if a.tensor.size < b.tensor.size:
+            a.tensor = cp.pad(a.tensor, (diff, 0), 'constant')
+        elif b.tensor.size < a.tensor.size:
+            b.tensor = cp.pad(b.tensor, (diff, 0), 'constant')
             
-    def __add__(a, b):        
-        a_t, b_t = match_size(a.tensor, b.tensor)
-        tensor = a_t + b_t
-        
-        if a.sign == -1 and b.sign == -1:
-            return BigInt(tensor, sign=-1)
+        return a, b
             
-        return BigInt(tensor)
+    def carry(self):
+        overflow, tensor = cp.zeros((2, len(self.tensor) + 1))
+        tensor[1:] = self.tensor[:]
         
-    def __sub__(a, b):
-        a_t, b_t = match_size(a.tensor, b.tensor)
-        
-        if a.sign == -1 and b.sign == -1:
-            return BigInt(a_t + b_t, sign=-1)
-        
-    def carry(self):        
-        overflow = 0
-        
-        for i in range(len(self.tensor)-1, -1, -1):
-            self.tensor[i] += overflow
+        while True:
+            o, t = cp.divmod(tensor, SEGMENT_BASE)
+            overflow[:-1], tensor = o[1:], t
             
-            if self.tensor[i] < 0:
-                overflow = -1
-                self.tensor[i] = SEGMENT_BASE - self.tensor[i]
+            if not cp.any(overflow):
+                self.tensor = cp.array(tensor, dtype=cp.int64)
+                break
                 
-            elif self.tensor[i] >= SEGMENT_BASE:
-                overflow = 1
-                self.tensor[i] -= SEGMENT_BASE
-                
-            else:
-                overflow = 0
+            tensor = tensor + overflow
         
-        
-        self.sign = overflow
-        
-        if overflow == 1:
-            self.tensor = cp.concatenate((cp.array([1]), self.tensor))
-        elif overflow == -1:
-            self.sign = -1
-            
-            
-# a = bigint(1234)
-# print(int(a))
-# 
-# b = bigint(23456)
-# print(int(b))
-# 
-# c = a + b
-# print(c.tensor)
