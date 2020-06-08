@@ -46,19 +46,19 @@ class BigInt:
         number = str(m)
         
         if len(number) > DISPLAY_DIGITS * 2:
-            number = f'{number[:DISPLAY_DIGITS]}...<{len(number)}>...{number[-DISPLAY_DIGITS:]}'
+            # number = f'{number[:DISPLAY_DIGITS]}...<{len(number)}>...{number[-DISPLAY_DIGITS:]}'
+            number = f'{number[:DISPLAY_DIGITS]}...'
             
         if s < 0:
-            return f'{number} - 10^{e}'
+            return f'{number} - {abs(s)}*10^{e}'
         else:
             return number
             
     def __int__(self):        
         m, s, e = self.components()
-        # print(m, s, e)
         
         if s < 0:
-            return m - 10**e
+            return m + s*10**e
         else:
             return m
         
@@ -147,8 +147,8 @@ class BigInt:
         first = str(self.tensor[0])
         subtrahend = int(first[:2]) if first[0] == '-' else 0
         
-        self.hardcarry()
-        # self.shorten()
+        self.carry()
+        self.shorten()
         
         
         s = ''.join([
