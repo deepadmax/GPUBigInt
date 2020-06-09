@@ -33,7 +33,7 @@ R = 10**ns.segment
 import cupy as cp
 import random
 
-start, end, step = (10**x for x in ns.range)
+start, end, step = ns.range
 
 bytes_length = sys.getsizeof(10**end)
 
@@ -41,27 +41,28 @@ for i in range(start, end+1, step):
     print(f'Preparing for length {i}')
 
     # Generate random array
-    arr = cp.random.randint(0, R, size=(ns.pairs * 2, i // ns.segment))
+    tensor = cp.random.randint(0, R, size=(ns.pairs * 2, i // ns.segment))
 
     # Iterate through all arrays and convert into integers
     integers = set()
     
-    for j in range(len(arr)):
+    for j in range(tensor.shape[0]):
         x = int(''.join([
                 n.zfill(len(n) + (-len(n) % ns.segment))
-                    for n in (str(m) for m in arr[j])]))
+                    for n in (str(m) for m in tensor[j])]))
                     
         if random.choice([False, True]):
-            arr[j] *= -1
+            tensor[j] *= -1
             x *= -1
             
         integers.add(x)
 
 
     # Save tensor to file
-    cp.save(f'{path_tensors}/{i}', arr)
+    cp.save(f'{path_tensors}/{i}', tensor)
     
     # Save integers to file
     with open(f'{path_integers}/{i}.lsi', 'wb') as f:
         for x in integers:
-            f.write(x.to_bytes(bytes_length, byteorder='big', signed=True) + b'\n')
+            x = x.to_bytes(bytes_length, byteorder='big', signed=True)
+            f.write(x + b'[END_OF_INTEGER]')
